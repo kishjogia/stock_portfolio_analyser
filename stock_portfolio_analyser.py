@@ -3,13 +3,15 @@
 # [x] 2. View several stock prices, read from file
 # [x] 3. Show different detail in a table
 # [x] 4. Auto update every 60 seconds (run in a thread)
-# [ ] 5. Get historical information for stock
-# [ ] 6. Put data into SQL DB
-# [ ] 7. Show graphical each stock
-# [ ] 8. Store stock list in a DB, be able to add/remove via UI
+# [x] 5. Put current data into SQL DB
+# [ ] 6. Get historical information for stock
+# [ ] 7. Put historical data into SQL DB
+# [ ] 8. Show graphical each stock
+# [ ] 9. Store stock list in a DB, be able to add/remove via UI
 
 import os
 import pandas as pd
+import sqlite3
 import time
 from threading import Thread
 from yahoo_fin.stock_info import get_live_price
@@ -20,7 +22,7 @@ if test[0] == "Linux":
 else:
 	stock_file = "/storage/emulated/0/development/stock_portfolio_analyser/stock_list.txt"
 
-def get_stock_list():
+def get_stock_list_file():
 	rows, cols = (100,3)
 	item = [[0]*cols]*rows
 
@@ -40,6 +42,23 @@ def get_stock_list():
 
 	return(item)
 
+def db_setup():
+	conn = sqlite3.connect("stock_db.db")
+	cur = conn.cursor()
+	
+	sql_portfolio_table = '''CREATE TABLE IF NOT EXISTS portfolio (
+													ticker VARCHAR,
+													price REAL,
+													total REAL,
+													costshare REAL,
+													PRIMARY KEY (ticker));'''
+	cur.execute(sql_portfolio_table)
+	conn.commit()
+
+	cur.close()
+
+	return conn
+
 def get_current_data(stock):
 	global curr_value
 	global total_chnge
@@ -58,6 +77,9 @@ def get_historical_data(stock):
 	return	
 
 def timer_60_secs(stock_list):
+	conn = sqlite3.connect("stock_db.db")
+	cur = conn.cursor()
+
 	while True:
 		i = 0
 		# Get the latest price of each of the shares
@@ -66,8 +88,13 @@ def timer_60_secs(stock_list):
 				price = get_current_data(stock)
 				# Add the data into a new rows
 				df.loc[i] = [stock[0],price,curr_value,stock[1],stock[2],total_chnge,percent_chng]
+
+				cur.execute("INSERT OR REPLACE INTO portfolio (ticker, price, total, costshare) values (?, ?, ?, ?)", \
+					(stock[0],price,stock[1],stock[2]))
+				conn.commit()
 				
 				i = i + 1
+
 		print(df)
 		time.sleep(60)
 
@@ -78,10 +105,12 @@ def timer_60_secs(stock_list):
 if __name__ == "__main__":
 
 	# Read the list of shares from a CSV file
-	stk_list = get_stock_list()
+	stk_list = get_stock_list_file()
 
 	# Add column into Pandas
 	df = pd.DataFrame(columns=["Ticker", "Price", "Value", "Total", "Cost/Share","Change", "% Change"])
+
+	db_conn = db_setup()
 
 	# Get the data every minute
 	get_data_thread = Thread(target=timer_60_secs, args=(stk_list,))
